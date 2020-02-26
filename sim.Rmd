@@ -1,0 +1,105 @@
+---
+title: "sim"
+author: "Jake Epstein"
+date: "1/29/2020"
+output: html_document
+---
+
+```{r}
+#setup
+library(tidyr)
+library(dplyr)
+library(ggplot2)
+N = 1e3
+days = 365
+p = .54
+spread = .05
+risk_free = .02
+games_per_night = 3
+initial_aum = 1
+wager_prop = .01
+season = rep(games_per_night, days)
+```
+
+
+```{r}
+trial = rep(NA, N * days)
+day = rep(NA, N * days )
+assets = rep(NA, N * days)
+
+k = 1
+for(i in 1:N){
+  aum = initial_aum
+  for(j in 1:days){
+    assets[k] = aum
+    day[k] = j
+    trial[k] = i
+    wins = rbinom(1, season[j], p)
+    losses = season[j] - wins
+    aum = aum + (wins - losses) * (wager_prop * aum) - games_per_night * wager_prop * spread
+    k = k + 1
+  }
+}
+
+assets_frame = data.frame(trial = as.factor(trial), day, assets)
+
+assets = rep(NA, days)
+aum = initial_aum
+for(i in 1:days){
+  assets[i] = aum
+  aum = aum * (1 + games_per_night * wager_prop * (2 * p -1)) - games_per_night * wager_prop * spread
+}
+
+theoretical = data.frame(assets, day = 1:days)
+
+```
+
+```{r}
+
+asset_growth = ggplot(assets_frame, aes(x = day, y = assets, group = trial)) +
+  geom_line(alpha = .1) +
+  theme_minimal() +
+  geom_line(data = theoretical, aes(x = day, y = assets, group = "mean", color = "red")) +
+  theme(legend.position = "none") +
+  labs(x = "Days", y = "Assets as a Multiple of Initial AUM",
+       title = paste0(
+         "Simulated Asset Growth, P(Win) = ", 100 *round(p, 2),
+         "%, Number of Samples = ", N,
+         ", AUM wagered daily = ", 100 * round(wager_prop * games_per_night,3),
+         "%, Spread = ", 100 * round(spread, 3), "%")) +
+  ylim(c(0, 5))
+
+ggsave(plot = asset_growth, filename = "asset_growth.png", device = "png", units = "in", width = 10, height = 6)
+
+```
+
+
+```{r}
+return_stats = assets_frame %>%
+  filter(day == days) %>%
+  mutate(cum_return = (assets/ initial_aum) - 1)
+
+mean_ret = mean(return_stats$cum_return)
+median_ret = median(return_stats$cum_return)
+ret_sd = sd(return_stats$cum_return)
+
+
+return_hist = ggplot(return_stats, aes(x = 100 * cum_return)) +
+  geom_density(fill = "grey") +
+  theme_minimal() +
+  xlim(-100, 250) +
+  geom_vline(xintercept = 100*mean_ret, color = "red") +
+  labs(x = "Simulated Annual Returns (%)",
+       y = "Probability",
+       title = paste0("Simulated Annual Returns, Mean = ", 100* round(mean_ret, 3),
+                      "%, Standard Deviation = ", 100 *round(ret_sd, 3),
+                      "%, Sharpe Ratio = ", round((mean_ret - risk_free)/ ret_sd, 3)))
+
+
+ggsave(plot = return_hist, filename = "return_hist.png", device = "png", units = "in", width = 10, height = 6)
+
+
+length(return_stats$cum_return > 0) / length(return_stats$cum_return)
+```
+
+
