@@ -1,0 +1,9 @@
+{
+    "path" : "~/hedge_funds",
+    "sortOrder" : [
+        {
+            "ascending" : true,
+            "columnIndex" : 2
+        }
+    ]
+}

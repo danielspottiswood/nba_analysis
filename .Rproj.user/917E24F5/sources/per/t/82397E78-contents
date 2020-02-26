@@ -1,0 +1,80 @@
+---
+title: "NBA analysis"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(xgboost)
+library(mlr)
+library(caret)
+library(SHAPforxgboost)
+
+```
+```{r}
+df = read.csv("keegans_real_nba_data.csv")
+relevant_df = df[c(200:nrow(df)),]
+
+model_df = relevant_df %>% select(game_line, home_ft_pct_L10,
+          home_last_five_wins, home_points_per_game,
+          home_points_allowed_per_game, home_ft_pct_on_season, home_fg_pct_on_season,
+          home_rebounds_on_season, home_personal_fouls_on_season, home_h2h_wins,
+       home_last_five_ATS,
+          away_last_five_wins,
+        away_points_per_game, away_points_allowed_per_game, away_ft_pct_on_season,
+          away_fg_pct_on_season, away_rebounds_on_season, away_personal_fouls_on_season,
+          away_h2h_wins, away_last_five_ATS, spread_covered)
+
+
+model_df = relevant_df %>% select(game_line, home_ft_pct_L10, home_prev_3, home_prev_5_home,
+          home_prev_10, home_last_ten_wins,
+          home_last_five_wins, home_last_three_wins, home_points_per_game,
+          home_points_allowed_per_game, home_ft_pct_on_season, home_fg_pct_on_season,
+          home_rebounds_on_season, home_personal_fouls_on_season, home_h2h_wins, home_last_ten_ATS,
+       home_last_five_ATS, home_last_three_ATS, away_last_ten_wins,
+          away_last_five_wins, away_last_three_wins,
+        away_points_per_game, away_points_allowed_per_game, away_ft_pct_on_season,
+          away_fg_pct_on_season, away_rebounds_on_season, away_personal_fouls_on_season,
+          away_h2h_wins, away_last_five_ATS, away_last_three_ATS, away_last_ten_ATS, spread_covered)
+```
+
+```{r}
+set.seed(123)
+folds = createFolds(y =model_df$spread_covered,  k = 5)
+params <- list(eta=.01)
+acc = c()
+conf_acc = c()
+for(fold in folds){
+  train <- model_df[-fold,]
+  test <- model_df[fold,]
+  dtrain = xgb.DMatrix(data = as.matrix(train %>% select(-spread_covered)), label = train$spread_covered)
+  dtest = xgb.DMatrix(data = as.matrix(test %>% select(-spread_covered)), label = test$spread_covered)
+  
+  xgbcv <- xgb.cv(params = params, data = dtrain, nrounds = 1000, nfold = 5, showsd = T,
+                  early_stopping_rounds= 20)
+  model <- xgb.train(params = params, data = dtrain, 
+                     nrounds = xgbcv$best_iteration)
+  pred <- predict(model, dtest)
+  bin_pred <- as.numeric(pred > .5)
+  conf <- ifelse((pred > quantile(pred, .8)[[1]] | pred < quantile(pred, .2)[[1]]), 1, 0) 
+  
+  test_w_pred <- test %>%
+    mutate(right = if_else(bin_pred == spread_covered, 1, 0)) %>%
+    mutate(conf_right = ifelse(conf==0, -1, ifelse(bin_pred == spread_covered, 1,0)))
+  confed = test_w_pred %>% filter(conf_right != -1)
+  acc = c(acc, mean(test_w_pred$right))
+  conf_acc = c(conf_acc, mean(confed$conf_right))
+}
+mean(conf_acc)
+mean(acc)
+
+shap.plot.summary.wrap1(model, X = as.matrix(train %>% select(-spread_covered)))
+
+
+xgb.plot.shap(data = as.matrix(train %>% select(-spread_covered)), # input data
+              model = model, # xgboost model
+              features = colnames(train %>% select(-spread_covered)),
+              plot_loess = T # add red line to plot
+              )
+```
+
